@@ -13,12 +13,12 @@
 
 
 
-local qemuBaseQcow2Image = nil -- Eg: "/path/to/your/barebone/readonly/devuan/qemu-image.qcow2"
+local qemuBaseQcow2Image = (arg[1] or nil)
 local sshPortExposed = 2222
 local sshSudo = "sudo"
 local aptUpdate = true
 local sshWorkdir = "./work"
-local sshConnectHost = "127.0.0.1"
+local sshConnectHost = (arg[2] or "127.0.0.1")
 local log = io.stderr
 
 
