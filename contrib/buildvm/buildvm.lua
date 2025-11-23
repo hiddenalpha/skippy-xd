@@ -11,35 +11,48 @@
 
   ]====================================================================]
 
+do
 
+	local qemuBaseQcow2Image = (arg[1] or nil)
+	local sshPortExposed = 2229
+	local sshUser = "user"
+	local sshSudo = "sudo"
+	local sshWorkdir = "./work"
+	local sshConnectHost = (arg[2] or "127.0.0.1")
+	local log = io.stderr
 
-local qemuBaseQcow2Image = nil -- Eg: "/path/to/your/barebone/readonly/devuan/qemu-image.qcow2"
-local sshPortExposed = 2222
-local sshSudo = "sudo"
-local aptUpdate = true
-local sshWorkdir = "./work"
-local sshConnectHost = "127.0.0.1"
-local log = io.stderr
+	function getBaseImg() return(assert(qemuBaseQcow2Image, "qemuBaseQcow2Image missing")) end
 
+	function getSshWorkdir() return(assert(sshWorkdir, "sshWorkdir missing")) end
 
+	function getSshPort() return(assert(sshPortExposed, "sshPortExposed missing")) end
 
-function getBaseImg()
-	return(assert(qemuBaseQcow2Image, "qemuBaseQcow2Image missing"))
-end
+	function getSshHost() return(assert(sshConnectHost, "sshConnectHost missing")) end
 
+	function getSshUser() return(assert(sshUser, "sshUser missing")) end
 
-function getSshPort()
-	return(assert(sshPortExposed, "sshPortExposed missing"))
-end
+	function getSshSudo() return(sshSudo or "") end
 
+	getHostCachedir = (function() local val
+		return function()
+			if not val then
+				local src = io.popen("printf %s ".. shEsc(os.getenv("PWD")) .."|md5sum -b -", "r")
+				val = src:read(32)
+				assert(val and val:len() == 32)
+				val = "/var/tmp/".. val
+				log:write("Using host cachedir: ".. val .."\n")
+				os.execute("mkdir ".. shEsc(val))
+			end
+			return val
+		end
+	end)()
 
-function getSshHost()
-	return(assert(sshConnectHost, "sshConnectHost missing"))
-end
+	function getVersionFile() return getHostCachedir() .. "/gitversion" end
 
+	function getRunFile() return getHostCachedir() .."/run" end
 
-function getSshSudo()
-	return(sshSudo or "")
+	function getHdaFile() return getHostCachedir() .."/hda.qcow2" end
+
 end
 
 
@@ -48,20 +61,24 @@ function shEsc( str )
 end
 
 
+function fileExists( path )
+	local f = io.open(path, "rb")
+	if f then f:close() end
+	return not not f
+end
+
+
 function asSshCmd( cmd )
 	return "ssh ".. getSshHost() .." -p".. getSshPort()
-		.." -T ".. shEsc("cd ".. sshWorkdir .." && ".. cmd) ..""
+		.." -oUser=".. getSshUser()
+		.." -T ".. shEsc("cd ".. getSshWorkdir() .." && ".. cmd) ..""
 end
 
 
 function asSshTtyCmd( cmd )
 	return "ssh ".. getSshHost() .." -p".. getSshPort()
-		.." -t ".. shEsc("cd ".. sshWorkdir .." && ".. cmd) ..""
-end
-
-
-function getVersionFile()
-	return "tmp-YsYfsdRimQWraPfX"
+		.." -oUser=".. getSshUser()
+		.." -t ".. shEsc("cd ".. getSshWorkdir() .." && ".. cmd) ..""
 end
 
 
@@ -77,19 +94,20 @@ end
 
 
 function createVmDisk()
+	if fileExists(getHdaFile()) then return end
 	local ok, a, b = os.execute("qemu-img create -F qcow2 -f qcow2"
-		.." -b ".. getBaseImg() .." hda.qcow2")
+		.." -b ".. getBaseImg() .." ".. shEsc(getHdaFile()))
 	if not ok then error(a..", "..b) end
 end
 
 
 function createVmRunScript()
-	local f = io.open("run", "wb")
+	local f = io.open(getRunFile(), "wb")
 	f:write("#!/bin/sh\n"
 		.."set -e \\\n"
 		.." && qemu-system-x86_64 \\\n"
 		.."     -accel kvm -m size=2G -smp cores=\"${NPROC:-$(nproc)}\" \\\n"
-		.."     -hda ./hda.qcow2 \\\n"
+		.."     -hda ".. getHdaFile() .." \\\n"
 		.."     -display none \\\n"
 		.."     -netdev user,id=n0,ipv6=off"
 		..        ",hostfwd=tcp:127.0.0.1:".. getSshPort() .."-:22 \\\n"
@@ -97,7 +115,7 @@ function createVmRunScript()
 		.." && true \\\n"
 		.."\n")
 	f:close()
-	local ok, a, b = os.execute("chmod +x run")
+	local ok, a, b = os.execute("chmod +x ".. shEsc(getRunFile()))
 	if not ok then
 		log:warn("[WARN ] chmod: ".. a .." ".. b .."\n")
 	end
@@ -112,15 +130,16 @@ end
 
 
 function startVm()
-	local ok, a, b = os.execute("(./run) & printf 'vm sh pid %s\\n' $!")
+	local ok, a, b = os.execute("(".. shEsc(getRunFile()) ..") & printf 'vm sh pid %s\\n' $!")
 	if not ok then error(a.." "..b) end
 	local i = 0 while true do i = i + 1
 		sleepSec(1)
 		if i > 42 then error("Unable to reach VM via ssh") end
 		local ok, a, b = os.execute("ssh ".. getSshHost() .." -p".. getSshPort()
+			.." -oUser=".. getSshUser()
 			.." -oConnectTimeout=7"
 			.." -T 'true"
-			..    " && mkdir -p ".. shEsc(sshWorkdir)
+			..    " && mkdir -p ".. shEsc(getSshWorkdir())
 			..    " && printf \"VM ssh connection OK\\n\""
 			..    " && true'")
 		if not ok then goto retryLater end
@@ -141,11 +160,12 @@ function aptInstall()
 		"libxft-dev", " libxcomposite-dev", "libxdamage-dev", "libxinerama-dev",
 		"libjpeg62-turbo-dev", "libgif-dev", "dpkg", "lintian", }
 	local cmd = "true"
-	if aptUpdate then
-		cmd = cmd .." && ".. getSshSudo() .." apt update"
-	end
-	cmd = cmd .." && ".. getSshSudo() .." apt install --no-install-recommends -y"
+		.." && aptInstall () { true"
+		..    " && ".. getSshSudo() .." apt install --no-install-recommends -y"
 	for _, p in ipairs(pkgs) do  cmd = cmd .." ".. p  end
+	cmd = cmd
+		.." ;}"
+		.." && aptInstall || ".. getSshSudo() .." apt update && aptInstall"
 	local ok, a, b = os.execute(asSshCmd(cmd))
 	if not ok then error(a..", "..b) end
 end
