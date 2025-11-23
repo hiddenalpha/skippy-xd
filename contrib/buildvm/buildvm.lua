@@ -11,35 +11,28 @@
 
   ]====================================================================]
 
+do
 
+	local qemuBaseQcow2Image = (arg[1] or nil)
+	local sshPortExposed = 2229
+	local sshUser = "user"
+	local sshSudo = "sudo"
+	local sshWorkdir = "./work"
+	local sshConnectHost = (arg[2] or "127.0.0.1")
+	local log = io.stderr
 
-local qemuBaseQcow2Image = (arg[1] or nil)
-local sshPortExposed = 2222
-local sshSudo = "sudo"
-local aptUpdate = true
-local sshWorkdir = "./work"
-local sshConnectHost = (arg[2] or "127.0.0.1")
-local log = io.stderr
+	function getBaseImg() return(assert(qemuBaseQcow2Image, "qemuBaseQcow2Image missing")) end
 
+	function getSshWorkdir() return(assert(sshWorkdir, "sshWorkdir missing")) end
 
+	function getSshPort() return(assert(sshPortExposed, "sshPortExposed missing")) end
 
-function getBaseImg()
-	return(assert(qemuBaseQcow2Image, "qemuBaseQcow2Image missing"))
-end
+	function getSshHost() return(assert(sshConnectHost, "sshConnectHost missing")) end
 
+	function getSshUser() return(assert(sshUser, "sshUser missing")) end
 
-function getSshPort()
-	return(assert(sshPortExposed, "sshPortExposed missing"))
-end
+	function getSshSudo() return(sshSudo or "") end
 
-
-function getSshHost()
-	return(assert(sshConnectHost, "sshConnectHost missing"))
-end
-
-
-function getSshSudo()
-	return(sshSudo or "")
 end
 
 
@@ -48,15 +41,24 @@ function shEsc( str )
 end
 
 
+function fileExists( path )
+	local f = io.open(path, "rb")
+	if f then f:close() end
+	return not not f
+end
+
+
 function asSshCmd( cmd )
 	return "ssh ".. getSshHost() .." -p".. getSshPort()
-		.." -T ".. shEsc("cd ".. sshWorkdir .." && ".. cmd) ..""
+		.." -oUser=".. getSshUser()
+		.." -T ".. shEsc("cd ".. getSshWorkdir() .." && ".. cmd) ..""
 end
 
 
 function asSshTtyCmd( cmd )
 	return "ssh ".. getSshHost() .." -p".. getSshPort()
-		.." -t ".. shEsc("cd ".. sshWorkdir .." && ".. cmd) ..""
+		.." -oUser=".. getSshUser()
+		.." -t ".. shEsc("cd ".. getSshWorkdir() .." && ".. cmd) ..""
 end
 
 
@@ -77,6 +79,7 @@ end
 
 
 function createVmDisk()
+	if fileExists("hda.qcow2") then return end
 	local ok, a, b = os.execute("qemu-img create -F qcow2 -f qcow2"
 		.." -b ".. getBaseImg() .." hda.qcow2")
 	if not ok then error(a..", "..b) end
@@ -118,9 +121,10 @@ function startVm()
 		sleepSec(1)
 		if i > 42 then error("Unable to reach VM via ssh") end
 		local ok, a, b = os.execute("ssh ".. getSshHost() .." -p".. getSshPort()
+			.." -oUser=".. getSshUser()
 			.." -oConnectTimeout=7"
 			.." -T 'true"
-			..    " && mkdir -p ".. shEsc(sshWorkdir)
+			..    " && mkdir -p ".. shEsc(getSshWorkdir())
 			..    " && printf \"VM ssh connection OK\\n\""
 			..    " && true'")
 		if not ok then goto retryLater end
@@ -141,11 +145,12 @@ function aptInstall()
 		"libxft-dev", " libxcomposite-dev", "libxdamage-dev", "libxinerama-dev",
 		"libjpeg62-turbo-dev", "libgif-dev", "dpkg", "lintian", }
 	local cmd = "true"
-	if aptUpdate then
-		cmd = cmd .." && ".. getSshSudo() .." apt update"
-	end
-	cmd = cmd .." && ".. getSshSudo() .." apt install --no-install-recommends -y"
+		.." && aptInstall () { true"
+		..    " && ".. getSshSudo() .." apt install --no-install-recommends -y"
 	for _, p in ipairs(pkgs) do  cmd = cmd .." ".. p  end
+	cmd = cmd
+		.." ;}"
+		.." && aptInstall || ".. getSshSudo() .." apt update && aptInstall"
 	local ok, a, b = os.execute(asSshCmd(cmd))
 	if not ok then error(a..", "..b) end
 end
