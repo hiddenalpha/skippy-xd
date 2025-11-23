@@ -180,7 +180,7 @@ end
 
 
 function clean()
-	local ok, a, b = os.execute(asSshCmd("make clean"))
+	local ok, a, b = os.execute(asSshCmd("make clean && rm -rf skippy-xd-*"))
 	if not ok then error(a.." "..b) end
 end
 
