@@ -33,6 +33,26 @@ do
 
 	function getSshSudo() return(sshSudo or "") end
 
+	getHostCachedir = (function() local val
+		return function()
+			if not val then
+				local src = io.popen("printf %s ".. shEsc(os.getenv("PWD")) .."|md5sum -b -", "r")
+				val = src:read(32)
+				assert(val and val:len() == 32)
+				val = "/var/tmp/".. val
+				log:write("Using host cachedir: ".. val .."\n")
+				os.execute("mkdir ".. shEsc(val))
+			end
+			return val
+		end
+	end)()
+
+	function getVersionFile() return getHostCachedir() .. "/gitversion" end
+
+	function getRunFile() return getHostCachedir() .."/run" end
+
+	function getHdaFile() return getHostCachedir() .."/hda.qcow2" end
+
 end
 
 
@@ -62,11 +82,6 @@ function asSshTtyCmd( cmd )
 end
 
 
-function getVersionFile()
-	return "tmp-YsYfsdRimQWraPfX"
-end
-
-
 function getVersionApprox()
 	local ok, a, b = os.execute("git describe --tags > ".. getVersionFile() .."")
 	if not ok then error(a..", "..b) end
@@ -79,20 +94,20 @@ end
 
 
 function createVmDisk()
-	if fileExists("hda.qcow2") then return end
+	if fileExists(getHdaFile()) then return end
 	local ok, a, b = os.execute("qemu-img create -F qcow2 -f qcow2"
-		.." -b ".. getBaseImg() .." hda.qcow2")
+		.." -b ".. getBaseImg() .." ".. shEsc(getHdaFile()))
 	if not ok then error(a..", "..b) end
 end
 
 
 function createVmRunScript()
-	local f = io.open("run", "wb")
+	local f = io.open(getRunFile(), "wb")
 	f:write("#!/bin/sh\n"
 		.."set -e \\\n"
 		.." && qemu-system-x86_64 \\\n"
 		.."     -accel kvm -m size=2G -smp cores=\"${NPROC:-$(nproc)}\" \\\n"
-		.."     -hda ./hda.qcow2 \\\n"
+		.."     -hda ".. getHdaFile() .." \\\n"
 		.."     -display none \\\n"
 		.."     -netdev user,id=n0,ipv6=off"
 		..        ",hostfwd=tcp:127.0.0.1:".. getSshPort() .."-:22 \\\n"
@@ -100,7 +115,7 @@ function createVmRunScript()
 		.." && true \\\n"
 		.."\n")
 	f:close()
-	local ok, a, b = os.execute("chmod +x run")
+	local ok, a, b = os.execute("chmod +x ".. shEsc(getRunFile()))
 	if not ok then
 		log:warn("[WARN ] chmod: ".. a .." ".. b .."\n")
 	end
@@ -115,7 +130,7 @@ end
 
 
 function startVm()
-	local ok, a, b = os.execute("(./run) & printf 'vm sh pid %s\\n' $!")
+	local ok, a, b = os.execute("(".. shEsc(getRunFile()) ..") & printf 'vm sh pid %s\\n' $!")
 	if not ok then error(a.." "..b) end
 	local i = 0 while true do i = i + 1
 		sleepSec(1)
