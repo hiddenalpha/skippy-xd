@@ -83,7 +83,7 @@ end
 
 
 function getVersionApprox()
-	local ok, a, b = os.execute("git describe --tags > ".. getVersionFile() .."")
+	local ok, a, b = os.execute("git describe > ".. getVersionFile() .."")
 	if not ok then error(a..", "..b) end
 	local f = io.open(getVersionFile(), "rb")
 	local v = f:read("l")
