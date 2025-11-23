@@ -745,7 +745,7 @@ anime(
 }
 
 static void
-update_clients(MainWin *mw)
+count_clients(MainWin *mw)
 {
 	// Update the list of windows with correct z-ordering
 	dlist *stack = dlist_first(wm_get_stack(mw->ps));
@@ -792,9 +792,14 @@ update_clients(MainWin *mw)
 }
 
 static void
-daemon_count_clients(MainWin *mw)
+count_and_filter_clients(MainWin *mw)
 {
-	update_clients(mw);
+	count_clients(mw);
+
+	foreach_dlist (mw->clients) {
+		ClientWin *cw = iter->data;
+		clientwin_update(cw);
+	}
 
 	// update mw->clientondesktop
 	long desktop = wm_get_current_desktop(mw->ps);
@@ -864,8 +869,12 @@ init_focus(MainWin *mw, enum layoutmode layout, Window leader) {
 		mw->client_to_focus = first->data;
 		mw->client_to_focus->focused = 1;
 		if (iter && !mw->mapped &&
-				(ps->o.switchCycleDuringWait || ps->o.switchWaitDuration == 0))
-			childwin_focus(mw->client_to_focus);
+				(ps->o.switchCycleDuringWait || ps->o.switchWaitDuration == 0)) {
+			Window wid = mw->client_to_focus->wid_client;
+			XRaiseWindow(ps->dpy, wid);
+			XSetInputFocus(ps->dpy, wid, RevertToParent, CurrentTime);
+			XFlush(ps->dpy);
+		}
 	}
 
 	if (layout == LAYOUTMODE_SWITCH && ps->o.switchLayout == LAYOUT_COSMOS)
@@ -1199,9 +1208,10 @@ skippy_activate(MainWin *mw, enum layoutmode layout, Window leader)
 
 	mw->client_to_focus = NULL;
 
-	daemon_count_clients(mw);
+	count_and_filter_clients(mw);
 	foreach_dlist(mw->clients) {
 		clientwin_update((ClientWin *) iter->data);
+		clientwin_update3((ClientWin *) iter->data);
 		clientwin_update2((ClientWin *) iter->data);
 	}
 
@@ -1230,6 +1240,7 @@ skippy_activate(MainWin *mw, enum layoutmode layout, Window leader)
 		cw->factor = 1;
 		cw->paneltype = wm_identify_panel(mw->ps, cw->wid_client);
 		clientwin_update(cw);
+		clientwin_update3(cw);
 		if (cw->paneltype == WINTYPE_DESKTOP)
 			clientwin_move(cw, 1, cw->src.x, cw->src.y, 1);
 		clientwin_update2(cw);
@@ -1282,10 +1293,11 @@ mainloop(session_t *ps, bool activate_on_start) {
 		},
 	};
 
-	daemon_count_clients(ps->mainwin);
+	count_and_filter_clients(ps->mainwin);
 
 	foreach_dlist(ps->mainwin->clients) {
 		clientwin_update((ClientWin *) iter->data);
+		clientwin_update3((ClientWin *) iter->data);
 		clientwin_update2((ClientWin *) iter->data);
 	}
 
@@ -1582,8 +1594,10 @@ mainloop(session_t *ps, bool activate_on_start) {
 
 		if (layout != LAYOUTMODE_SWITCH
 				&& !toggling && ps->o.pivotLockingTime > 0
-				&& time_in_millis() >= first_animated + ps->o.pivotLockingTime)
+				&& time_in_millis() >= first_animated + ps->o.pivotLockingTime) {
+			printfdf(false, "(): pivot locking at %d", ps->o.pivotLockingTime);
 			toggling = true;
+		}
 
 		// Process X events
 		int num_events = 0;
@@ -1635,7 +1649,7 @@ mainloop(session_t *ps, bool activate_on_start) {
 			}
 			else if (mw && ev.type == DestroyNotify) {
 				printfdf(false, "(): else if (ev.type == DestroyNotify) {");
-				daemon_count_clients(ps->mainwin);
+				count_and_filter_clients(ps->mainwin);
 				if (!mw->clientondesktop) {
 					printfdf(false, "(): Last client window destroyed/unmapped, "
 							"exiting.");
@@ -1652,16 +1666,18 @@ mainloop(session_t *ps, bool activate_on_start) {
 					cw = (ClientWin *) iter->data;
 				if (cw) {
 					clientwin_update(cw);
+					clientwin_update3(cw);
 					clientwin_update2(cw);
 				}
             }
-			else if (ev.type == CreateNotify || ev.type == UnmapNotify) {
-				printfdf(false, "(): else if (ev.type == CreateNotify || ev.type == UnmapNotify) {");
-				daemon_count_clients(ps->mainwin);
+			else if (ev.type == CreateNotify || ev.type == MapNotify || ev.type == UnmapNotify) {
+				printfdf(false, "(): else if (ev.type == CreateNotify || ev.type == MapNotify || ev.type == UnmapNotify) {");
+				count_and_filter_clients(ps->mainwin);
 				dlist *iter = (wid ? dlist_find(ps->mainwin->clients, clientwin_cmp_func, (void *) wid): NULL);
 				if (iter) {
 					ClientWin *cw = (ClientWin *) iter->data;
 					clientwin_update(cw);
+					clientwin_update3(cw);
 					clientwin_update2(cw);
 				}
 				num_events--;
@@ -1680,6 +1696,14 @@ mainloop(session_t *ps, bool activate_on_start) {
 						wid = ev_window(ps, &ev);
 
 						num_events--;
+						dlist *iter = (wid ? dlist_find(ps->mainwin->clients,
+								clientwin_cmp_func, (void *) wid): NULL);
+						if (iter) {
+							ClientWin *cw = (ClientWin *) iter->data;
+							clientwin_update(cw);
+							clientwin_update3(cw);
+							clientwin_update2(cw);
+						}
 					}
 				}
 			}
@@ -1778,7 +1802,7 @@ mainloop(session_t *ps, bool activate_on_start) {
 
 		// Do delayed painting if it's active
 		if (mw && pending_damage && !die) {
-			printfdf(false, "(): delayed painting");
+			//printfdf(false, "(): delayed painting");
 			pending_damage = false;
 			foreach_dlist(mw->clientondesktop) {
 				if (((ClientWin *) iter->data)->damaged)
@@ -2116,7 +2140,7 @@ show_help() {
 			"  --help              - show this message.\n"
 			"  --debug-log         - enable debugging logs.\n"
 			"\n"
-			"  --config            - load/reload configuration file from specifed path.\n"
+			"  --config            - load/reload configuration file from specified path.\n"
 			"  --config-reload     - reload configuration file without changing path.\n"
 			"\n"
 			"  --start-daemon      - run as daemon mode.\n"
@@ -2134,6 +2158,7 @@ show_help() {
 			"                          sticky, shaded, minimized, float,\n"
 			"                          maximized_vert, maximized_horz, maximized\n"
 			"  --desktop           - display only windows on specific virtual desktops.\n"
+			"                          use '-1' to show windows from all desktops.\n"
 			"\n"
 			"  --toggle            - activate via toggle mode.\n"
 			"  --pivot             - activate via pivot mode with specified pivot key.\n"
@@ -2797,7 +2822,7 @@ load_config_file(session_t *ps)
 	}
 
 	config_get_bool_wrap(config, "bindings", "enforceFocus", &ps->o.enforceFocus);
-    config_get_int_wrap(config, "bindings", "pivotLockingTime", &ps->o.pivotLockingTime, 0, 20);
+    config_get_int_wrap(config, "bindings", "pivotLockingTime", &ps->o.pivotLockingTime, 0, 20000);
 
     // load keybindings settings
     ps->o.bindings_keysUp = mstrdup(config_get(config, "bindings", "keysUp", "Up"));
