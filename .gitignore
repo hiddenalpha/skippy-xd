@@ -34,3 +34,4 @@ doxygen/
 
 # User config override
 #skippy-xd.rc*
+/tags
