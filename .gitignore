@@ -11,7 +11,7 @@
 # install-sh
 # missing
 # stamp-h1
-/skippy-xd
+skippy-xd
 *.o
 build/
 test-progs/
