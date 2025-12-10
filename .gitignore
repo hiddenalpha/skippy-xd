@@ -33,4 +33,5 @@ doxygen/
 /src/backtrace-symbols.[ch]
 
 # User config override
-skippy-xd.rc*
+#skippy-xd.rc*
+/tags

@@ -1,0 +1,20 @@
+#
+# For system wide config, copy this file to
+# "$XDG_CONFIG_HOME/skippy-xd.rc"
+# Resolved, this usually is:
+# "/etc/xdg/skippy-xd.rc"
+#
+# For user config copy this file to
+# "$HOME/.config/skippy-xd/skippy-xd.rc"
+#
+# These paths are hardcoded in "src/skippy.c" in `get_cfg_path()` btw.
+#
+# TODO: Fill this file with ALL possible configs, commented out, with added doc.
+#
+
+[label]
+	# decides what text to display.
+	# is one of: windowClass, windowTitle
+	# Default: windowClass
+	option = windowTitle
+
