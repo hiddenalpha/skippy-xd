@@ -9,8 +9,35 @@
 #
 # These paths are hardcoded in "src/skippy.c" in `get_cfg_path()` btw.
 #
-# TODO: Fill this file with ALL possible configs, commented out, with added doc.
-#
+
+[display]
+	# Animation duration in ms. Default `200`. `0` to switch off.
+	animationDuration = 120
+	# Animation refresh rate fps. Default `60`.
+	animationRefresh = 30
+	# Whether to display window frames. Default `true`.
+	includeFrame = false
+
+[filler]
+	tint = #333333
+	tintOpacity = 128
+	opacity = 255
+	iconPlace = mid mid
+	iconSize = 48
+
+[normal]
+	tint = #000000
+	tintOpacity = 0
+	opacity = 255
+
+[highlight]
+	tint = #666666
+	opacity = 255
+
+[shadow]
+	tint = #000000
+	tintOpacity = 0
+	opacity = 128
 
 [label]
 	# decides what text to display.
