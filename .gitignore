@@ -11,7 +11,7 @@
 # install-sh
 # missing
 # stamp-h1
-skippy-xd
+/skippy-xd
 *.o
 build/
 test-progs/
@@ -33,4 +33,4 @@ doxygen/
 /src/backtrace-symbols.[ch]
 
 # User config override
-skippy-xd.rc*
+#skippy-xd.rc*

@@ -195,12 +195,13 @@ function pkg()
 	local ok, a, b = os.execute(asSshTtyCmd("true"
 		--
 		-- data.tar.gz
-		.." && mkdir -p bin"
+		.." && mkdir -p bin etc/xdg"
 		.." && cp skippy-xd bin/."
+		.." && cp contrib/buildvm/skippy-xd.rc.skel etc/xdg/skippy-xd.rc.skel"
 		.." && strip bin/skippy-xd"
-		.." && find bin -type f -exec md5sum -b {} + > MD5SUM"
+		.." && find bin etc -type f -exec md5sum -b {} + > MD5SUM"
 		.." && tripl=\"$(gcc -dumpmachine)\""
-		.." && tar --owner=0 --group=0 -Hustar -cf data.tar bin"
+		.." && tar --owner=0 --group=0 -Hustar -cf data.tar bin etc"
 		.." && size=$(ls -s data.tar|cut -d' ' -f1)"
 		.." && gzip -n9f data.tar"
 		--
